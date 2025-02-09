@@ -10,6 +10,7 @@
   "description": "",
   "dependencies": {
     "@polkadot/api": "^15.5.2",
+    "@reef-chain/evm-provider": "^4.0.5",
     "express": "^4.21.2"
   },
   "devDependencies": {
