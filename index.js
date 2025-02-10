@@ -1,10 +1,12 @@
 const { WsProvider } = require('@polkadot/api');
 const { Provider } = require('@reef-chain/evm-provider');
+const axios = require('axios')
 const express = require("express");
 
 const app = express();
 const PORT = 3000;
 const RPC_URL = "wss://rpc.reefscan.com/ws";
+const GQL_ENDPOINT =  "https://squid.subsquid.io/reef-explorer/graphql";
 
 async function getProvider() {
   const provider = new Provider({
@@ -24,13 +26,45 @@ function getTimestamp(timestamp) {
 }
 
 function getRewardsQuery(from,to,signer){
-  return ```
+  return `
     query GetRewards {
       stakings(limit: 100, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_eq: "${signer}"}}}}) {
         amount
         timestamp
       }
-    }```;
+    }`;
+}
+
+async function getNominatorsRewards(nominators, from, to) {
+  try {
+    const requests = nominators.map(async (nominator) => {
+      try {
+        const response = await axios({
+          method: "post",
+          url: GQL_ENDPOINT,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          data: {
+            query: getRewardsQuery(from, to, nominator.address),
+          },
+        });
+        
+        return {
+          ...nominator,
+          amount_staked: response.data.data.stakings,
+        };
+      } catch (error) {
+        console.error(`Error fetching rewards for ${nominator.address}:`, error);
+        return { ...nominator, amount_staked: [] };
+      }
+    });
+    
+    const updatedNominators = await Promise.all(requests);
+    return updatedNominators;
+  } catch (error) {
+    console.error("getNominatorsRewards error:", error);
+  }
 }
 
 async function getNominators() {
@@ -78,8 +112,6 @@ async function getNominatorsForValidator(validator,from,to) {
   let fromTimestamp = from ? new Date(from.split('-').reverse().join('-')).getTime() : null;
   let toTimestamp = to ? new Date(to.split('-').reverse().join('-')).getTime() : null;
 
-  console.log("From Timestamp:", getTimestamp(fromTimestamp));
-  console.log("To Timestamp:", getTimestamp(toTimestamp));
   const api = await getProvider();
   const nominatorsMap = await api.query.staking.nominators.entries();
 
@@ -106,12 +138,14 @@ async function getNominatorsForValidator(validator,from,to) {
     }
   }
 
+  const nominators_updated = await getNominatorsRewards(nominators,getTimestamp(fromTimestamp),getTimestamp(toTimestamp));
+
     validatorsData.push({
       validator,
       from,
       to,
       nominators_count: nominators.length,
-      nominators
+      nominators:nominators_updated
     });
 
   return validatorsData;
