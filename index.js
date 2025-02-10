@@ -31,17 +31,22 @@ function getRewardsQuery(from,to,signer){
       stakings(limit: 100, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_eq: "${signer}"}}}}) {
         amount
         timestamp
+        signer {
+          id
+        }
       }
     }`;
 }
 
 function formatStakings(stakings) {
   return stakings.map(staking => ({
-    amount: staking.amount,
+    amount: (BigInt(staking.amount) / BigInt(1e18)).toString(),
     timestamp: new Date(staking.timestamp)
       .toLocaleDateString("en-GB")
+      .replace(/\//g, "-")
   }));
 }
+
 
 
 async function getNominatorsRewards(nominators, from, to) {
