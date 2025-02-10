@@ -19,42 +19,80 @@ async function getValidators() {
   return await api.query.session.validators();
 }
 
+
 async function getNominators() {
   const api = await getProvider();
   const validators = await getValidators();
   const nominatorsMap = await api.query.staking.nominators.entries();
-  
+
   const nominatorsData = nominatorsMap.map(([key, value]) => {
     return {
       nominator: key.args[0].toString(),
-      targets: value.unwrapOrDefault().targets.map(target => target.toString())
+      targets: value.unwrapOrDefault().targets.map(target => target.toString()),
+      since: value.unwrapOrDefault().submittedIn.toNumber()
     };
   });
 
   let validatorsData = [];
+  const currentEra = (await api.query.staking.activeEra()).unwrap().index.toNumber();
 
-  for(let i=0;i<validators.length;i++){
+  for (let i = 0; i < validators.length; i++) {
     let validator = validators[i];
     let nominators = [];
 
-    for(let j=0;j<nominatorsData.length;j++){
-      if(nominatorsData[j].targets.toString().includes(validator.toString())){
+    for (let j = 0; j < nominatorsData.length; j++) {
+      if (nominatorsData[j].targets.includes(validator.toString())) {
+        let days = (currentEra - nominatorsData[j].since) * 2;
         nominators.push({
           address: nominatorsData[j].nominator,
-          days:0
+          days: days
         });
       }
     }
 
     validatorsData.push({
       validator,
-      nominators_count:nominators.length,
+      nominators_count: nominators.length,
       nominators
-    })
-
+    });
   }
 
-  
+  return validatorsData;
+}
+
+
+async function getNominatorsForValidator(validator) {
+  const api = await getProvider();
+  const nominatorsMap = await api.query.staking.nominators.entries();
+
+  const nominatorsData = nominatorsMap.map(([key, value]) => {
+    return {
+      nominator: key.args[0].toString(),
+      targets: value.unwrapOrDefault().targets.map(target => target.toString()),
+      since: value.unwrapOrDefault().submittedIn.toNumber()
+    };
+  });
+
+  let validatorsData = [];
+  const currentEra = (await api.query.staking.activeEra()).unwrap().index.toNumber();
+
+  let nominators = [];
+
+  for (let j = 0; j < nominatorsData.length; j++) {
+    if (nominatorsData[j].targets.includes(validator.toString())) {
+      let days = (currentEra - nominatorsData[j].since) * 2;
+      nominators.push({
+        address: nominatorsData[j].nominator,
+        days: days
+      });
+    }
+  }
+
+    validatorsData.push({
+      validator,
+      nominators_count: nominators.length,
+      nominators
+    });
 
   return validatorsData;
 }
@@ -72,6 +110,16 @@ app.get("/validators", async (req, res) => {
 app.get("/nominators", async (req, res) => {
   try {
     const nominators = await getNominators();
+    res.json(nominators);
+  } catch (error) {
+    console.error("Error fetching nominators:", error);
+    res.status(500).json({ error: "Failed to fetch nominators" });
+  }
+});
+
+app.get("/nominators-for/:validator", async (req, res) => {
+  try {
+    const nominators = await getNominatorsForValidator(req.params.validator);
     res.json(nominators);
   } catch (error) {
     console.error("Error fetching nominators:", error);
