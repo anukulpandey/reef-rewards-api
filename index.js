@@ -19,6 +19,19 @@ async function getValidators() {
   return await api.query.session.validators();
 }
 
+function getTimestamp(timestamp) {
+  return new Date(timestamp).toISOString(); 
+}
+
+function getRewardsQuery(from,to,signer){
+  return ```
+    query GetRewards {
+      stakings(limit: 100, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_eq: "${signer}"}}}}) {
+        amount
+        timestamp
+      }
+    }```;
+}
 
 async function getNominators() {
   const api = await getProvider();
@@ -61,7 +74,12 @@ async function getNominators() {
 }
 
 
-async function getNominatorsForValidator(validator) {
+async function getNominatorsForValidator(validator,from,to) {
+  let fromTimestamp = from ? new Date(from.split('-').reverse().join('-')).getTime() : null;
+  let toTimestamp = to ? new Date(to.split('-').reverse().join('-')).getTime() : null;
+
+  console.log("From Timestamp:", getTimestamp(fromTimestamp));
+  console.log("To Timestamp:", getTimestamp(toTimestamp));
   const api = await getProvider();
   const nominatorsMap = await api.query.staking.nominators.entries();
 
@@ -90,6 +108,8 @@ async function getNominatorsForValidator(validator) {
 
     validatorsData.push({
       validator,
+      from,
+      to,
       nominators_count: nominators.length,
       nominators
     });
@@ -119,7 +139,8 @@ app.get("/nominators", async (req, res) => {
 
 app.get("/nominators-for/:validator", async (req, res) => {
   try {
-    const nominators = await getNominatorsForValidator(req.params.validator);
+    const { from, to } = req.query;
+    const nominators = await getNominatorsForValidator(req.params.validator,from,to);
     res.json(nominators);
   } catch (error) {
     console.error("Error fetching nominators:", error);
