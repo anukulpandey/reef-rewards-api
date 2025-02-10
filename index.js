@@ -35,6 +35,15 @@ function getRewardsQuery(from,to,signer){
     }`;
 }
 
+function formatStakings(stakings) {
+  return stakings.map(staking => ({
+    amount: staking.amount,
+    timestamp: new Date(staking.timestamp)
+      .toLocaleDateString("en-GB")
+  }));
+}
+
+
 async function getNominatorsRewards(nominators, from, to) {
   try {
     const requests = nominators.map(async (nominator) => {
@@ -52,7 +61,7 @@ async function getNominatorsRewards(nominators, from, to) {
         
         return {
           ...nominator,
-          amount_staked: response.data.data.stakings,
+          amount_staked: formatStakings(response.data.data.stakings),
         };
       } catch (error) {
         console.error(`Error fetching rewards for ${nominator.address}:`, error);
