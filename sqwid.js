@@ -24,10 +24,7 @@ function getTimestampFromDate(from) {
 
 function transformMapToArray(inputObj) {
     return Object.entries(inputObj).map(([address, stakes]) => {
-        let result = { address };
-        // if (showRewards) {
-        //     result.amount_staked = formatStakings(stakes.map(({ amount, timestamp }) => ({ amount, timestamp })));
-        // }
+        let result = { address ,amount_staked:formatStakings(stakes.map(({ amount, timestamp }) => ({ amount, timestamp })))};
         return result;
     });
 }
