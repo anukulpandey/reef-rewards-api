@@ -64,7 +64,7 @@ async function getNominatorsForValidatorsFromSqwid(from,to,validator) {
         // now nominators[address]=[[window_1],[window_2]...]
 
         // find nominators with same eras
-        const windowsEraToNominatorArray=nominatorsWithRewardsEraMap;
+        const windowsEraToNominatorArray=groupByWindowSize(nominatorsWithRewardsEraMap);
 
         return windowsEraToNominatorArray;
     } catch (error) {
@@ -88,6 +88,7 @@ function getNominatorsRewardsWindow(data){
 }
 
 function groupContinuousNumbers(arr) {
+    //returns address=>window_era[] 
     arr.sort((a, b) => a - b);
 
     let result = [];
@@ -97,13 +98,11 @@ function groupContinuousNumbers(arr) {
       if (arr[i] === arr[i - 1] + 1) {
         temp.push(arr[i]);
       } else {
-        // When discontinuity is found, push the current window and reset temp
         result.push([temp[0], temp[temp.length - 1]]);
-        temp = [arr[i]]; // Start a new window
+        temp = [arr[i]];
       }
     }
   
-    // Push the last window after the loop ends
     result.push([temp[0], temp[temp.length - 1]]);
   
     return result;
@@ -111,26 +110,21 @@ function groupContinuousNumbers(arr) {
 
   function groupByWindowSize(data) {
     // converts address=>window_era[] to window_era=>address[]
-    let windowMap = {};
-    
-    for (const [nominator, ranges] of Object.entries(data)) {
-        for (const [start, end] of ranges) {
-            for (let i = start; i <= end; i++) {
-                if (!windowMap[i]) {
-                    windowMap[i] = new Set();
-                }
-                windowMap[i].add(nominator);
-            }
+    const grouped = {};
+
+    Object.entries(data).forEach(([nominator, windows]) => {
+    windows.forEach(window => {
+        const key = JSON.stringify(window);
+        if (!grouped[key]) {
+        grouped[key] = [];
         }
-    }
-    
-    const result = {};
-    for (const [key, value] of Object.entries(windowMap)) {
-        result[key] = Array.from(value);
-    }
-    
-    return result;
+        grouped[key].push(nominator);
+    });
+    });
+
+return (grouped);
 }
   
+
   
 module.exports={getEraDifferenceFromTimestamp,getTimestampFromDate,getNominatorsForValidatorsFromSqwid}
