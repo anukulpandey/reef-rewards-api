@@ -9,26 +9,13 @@ const app = express();
 app.get("/sqwid",async(req,res)=>{
   try {
     const { from, to,validator } = req.query;
-
-    // converting dd-mm-yyyy to timestamps
-    let fromTimestamp = getTimestampFromDate(from);
-    let toTimestamp = getTimestampFromDate(to);
-  
-    // fetching current era using provider.api
-    const currentEra = await getCurrentEra();
-
-    // calculating from & to era for passing to gql
-    const fromEra =currentEra- await getEraDifferenceFromTimestamp(fromTimestamp);
-    const toEra =currentEra- await getEraDifferenceFromTimestamp(toTimestamp);
-
-    const response = await getNominatorsForValidatorsFromSqwid(fromEra,toEra,validator);
+    const response = await getNominatorsForValidatorsFromSqwid(from,to,validator);
 
     res.json({
-      from,to,validator,currentEra,fromEra,toEra,response
+      from,to,validator,response
     })
   } catch (error) {
-    console.error("Error fetching validators:", error);
-    res.status(500).json({ error: "Failed to fetch validators from sqwid" });
+    res.status(500).json({ error });
   }
 });
 

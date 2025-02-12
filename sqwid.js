@@ -1,5 +1,6 @@
 const { default: axios } = require("axios");
 const { GQL_ENDPOINT } = require("./constants");
+const { getCurrentEra } = require("./nominators");
 
 async function getEraDifferenceFromTimestamp(timestamp) {
     const currentTime = Date.now();
@@ -29,6 +30,16 @@ function getNominatorsForValidatorQuery(from,to,validator){
 
 
 async function getNominatorsForValidatorsFromSqwid(from,to,validator) {
+     // converting dd-mm-yyyy to timestamps
+        let fromTimestamp = getTimestampFromDate(from);
+        let toTimestamp = getTimestampFromDate(to);
+      
+        // fetching current era using provider.api
+        const currentEra = await getCurrentEra();
+    
+        // calculating from & to era for passing to gql
+        const fromEra =currentEra- await getEraDifferenceFromTimestamp(fromTimestamp);
+        const toEra =currentEra- await getEraDifferenceFromTimestamp(toTimestamp);
     try {
         const response = await axios({
             method: "post",
@@ -37,7 +48,7 @@ async function getNominatorsForValidatorsFromSqwid(from,to,validator) {
                 "Content-Type": "application/json",
             },
             data: {
-                query: getNominatorsForValidatorQuery(from, to, validator),
+                query: getNominatorsForValidatorQuery(fromEra, toEra, validator),
             },
         });
         return response.data.data.eraValidatorInfos;
