@@ -130,4 +130,4 @@ async function getNominatorsForValidator(validator,from,to) {
   }
 
   
-module.exports ={getValidators, getNominators,getNominatorsForValidator,getCurrentEra,getTimestamp}
+module.exports ={getValidators, getNominators,getNominatorsForValidator,getCurrentEra,getTimestamp,getCumulatedStake}

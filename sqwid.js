@@ -1,6 +1,7 @@
 const { default: axios } = require("axios");
 const { GQL_ENDPOINT } = require("./constants");
-const { getCurrentEra, getTimestamp } = require("./nominators");
+const { getCurrentEra, getTimestamp, getCumulatedStake } = require("./nominators");
+const { formatStakings } = require("./gql");
 
 async function getEraDifferenceFromTimestamp(timestamp) {
     const currentTime = Date.now();
@@ -21,12 +22,16 @@ function getTimestampFromDate(from){
     return from ? new Date(from.split('-').reverse().join('-')).getTime() : null
 }
 
-function transformMapToArray(inputObj) {
-    return Object.entries(inputObj).map(([address, stakes]) => ({
-        address,
-        amount_staked: stakes.map(({ amount, timestamp }) => ({ amount, timestamp }))
-    }));
+function transformMapToArray(inputObj, showRewards) {
+    return Object.entries(inputObj).map(([address, stakes]) => {
+        let result = { address };
+        if (showRewards) {
+            result.amount_staked = formatStakings(stakes.map(({ amount, timestamp }) => ({ amount, timestamp })));
+        }
+        return result;
+    });
 }
+
 
 function getNominatorsForValidatorQuery(from,to,validator){
     return `
@@ -45,7 +50,7 @@ function getNominatorsForValidatorQuery(from,to,validator){
 function getRewardsQuery(from,to,nominators){
     return `
       query GetRewards {
-        stakings(limit: 100, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_in: ${nominators}}}}}) {
+        stakings(limit: 200, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_in: ${nominators}}}}}) {
           signer {
             id
           }
@@ -107,7 +112,7 @@ function getRewardsQuery(from,to,nominators){
     }
     
 
-async function getNominatorsForValidatorsFromSqwid(from,to,validator) {
+async function getNominatorsForValidatorsFromSqwid(from,to,validator,showRewards) {
      // converting dd-mm-yyyy to timestamps
         let fromTimestamp = getTimestampFromDate(from);
         let toTimestamp = getTimestampFromDate(to);
@@ -145,9 +150,12 @@ async function getNominatorsForValidatorsFromSqwid(from,to,validator) {
         // address=>{amount,timestamp}[]
         const nominatorRewardsMap = await getRewardsForNominatorsArray(windowsEraToNominatorArray,currentEra);
 
-        const finalResult = transformMapToArray(nominatorRewardsMap);
+        const finalResult = transformMapToArray(nominatorRewardsMap,showRewards);
 
-        return finalResult;
+        return {
+            nominators:finalResult,
+            cumulated_stakes:getCumulatedStake(finalResult)
+        };
     } catch (error) {
         console.log("error===",error);
         return [];

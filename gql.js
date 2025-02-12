@@ -75,5 +75,5 @@ async function getNominatorsRewards(nominators, from, to) {
   }
   
 module.exports={
-    getNominatorsRewards
+    getNominatorsRewards,formatStakings
 }
