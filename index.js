@@ -47,6 +47,19 @@ function formatStakings(stakings) {
   }));
 }
 
+function getDaysInRange(fromTimestamp, toTimestamp, nominatorEra, currentEra) {
+  const eraDuration = 2 * 24 * 60 * 60;
+  const now = Math.floor(Date.now() / 1000);
+
+  const currentEraStart = now - (currentEra - nominatorEra) * eraDuration;
+
+  const fromEra = nominatorEra + Math.floor((fromTimestamp/1000 - currentEraStart) / eraDuration);
+  const toEra = nominatorEra + Math.floor((toTimestamp/1000 - currentEraStart) / eraDuration);
+
+  return (Math.max(fromEra,nominatorEra)-Math.min(toEra,currentEra))*2
+}
+
+
 
 
 async function getNominatorsRewards(nominators, from, to) {
@@ -121,6 +134,20 @@ async function getNominators() {
   return validatorsData;
 }
 
+function getCumulatedStake(nominators) {
+  const stakeMap = new Map();
+  for (const nominator of nominators) {
+    for (const { amount, timestamp } of nominator.amount_staked) {
+      stakeMap.set(timestamp, (stakeMap.get(timestamp) || 0) + Number(amount));
+    }
+  }
+  return Array.from(stakeMap, ([timestamp, amount]) => ({ amount,timestamp }));
+}
+
+function getActiveNominatorsInFrame(nominators){
+  return nominators.filter(nominator => nominator.amount_staked.length > 0);
+}
+
 
 async function getNominatorsForValidator(validator,from,to) {
   let fromTimestamp = from ? new Date(from.split('-').reverse().join('-')).getTime() : null;
@@ -144,7 +171,8 @@ async function getNominatorsForValidator(validator,from,to) {
 
   for (let j = 0; j < nominatorsData.length; j++) {
     if (nominatorsData[j].targets.includes(validator.toString())) {
-      let days = (currentEra - nominatorsData[j].since) * 2;
+      // let days = (currentEra - nominatorsData[j].since) * 2;
+      let days = getDaysInRange(fromTimestamp,toTimestamp,nominatorsData[j].since,currentEra)
       nominators.push({
         address: nominatorsData[j].nominator,
         days: days
@@ -154,12 +182,15 @@ async function getNominatorsForValidator(validator,from,to) {
 
   const nominators_updated = await getNominatorsRewards(nominators,getTimestamp(fromTimestamp),getTimestamp(toTimestamp));
 
+  const cumulated_stake = getCumulatedStake(nominators_updated);
+
     validatorsData.push({
       validator,
       from,
       to,
-      nominators_count: nominators.length,
-      nominators:nominators_updated
+      nominators_count: getActiveNominatorsInFrame(nominators_updated).length,
+      cumulated_stake,
+      nominators:getActiveNominatorsInFrame(nominators_updated)
     });
 
   return validatorsData;
