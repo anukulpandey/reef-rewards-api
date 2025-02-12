@@ -74,8 +74,19 @@ async function getValidators() {
         stakeMap.set(timestamp, (stakeMap.get(timestamp) || 0) + Number(amount));
       }
     }
-    return Array.from(stakeMap, ([timestamp, amount]) => ({ amount,timestamp }));
+  
+    const stakeArray = Array.from(stakeMap, ([timestamp, amount]) => ({ amount, timestamp }));
+
+    const sortedStakeArray = stakeArray.sort((a, b) => {
+      const dateA = new Date(a.timestamp.split('-').reverse().join('-'));
+      const dateB = new Date(b.timestamp.split('-').reverse().join('-'));
+  
+      return dateA - dateB;
+    });
+  
+    return sortedStakeArray;
   }
+  
   
   function getActiveNominatorsInFrame(nominators){
     return nominators.filter(nominator => nominator.amount_staked.length > 0);

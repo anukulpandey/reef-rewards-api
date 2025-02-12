@@ -89,8 +89,6 @@ async function getRewardsForNominatorsArray(windowsEraToNominatorArray, currentE
 
                     const rewards = response.data.data.stakings || [];
 
-                  
-
                     for (const reward of rewards) {
                         const signerId = reward.signer.id;
                         if (!parsedResult[signerId]) {
@@ -121,69 +119,70 @@ async function getRewardsForNominatorsArray(windowsEraToNominatorArray, currentE
 
 
 async function getNominatorsForValidatorsFromSqwid(from, to, validator) {
-    // converting dd-mm-yyyy to timestamps
     let fromTimestamp = getTimestampFromDate(from);
     let toTimestamp = getTimestampFromDate(to);
 
-    // fetching current era using provider.api
     const currentEra = await getCurrentEra();
-
-    // calculating from & to era for passing to gql
     const fromEra = currentEra - await getEraDifferenceFromTimestamp(fromTimestamp);
     const toEra = currentEra - await getEraDifferenceFromTimestamp(toTimestamp);
+
     try {
         const response = await axios({
             method: "post",
             url: GQL_ENDPOINT,
-            headers: {
-                "Content-Type": "application/json",
-            },
-            data: {
-                query: getNominatorsForValidatorQuery(fromEra, toEra, validator),
-            },
+            headers: { "Content-Type": "application/json" },
+            data: { query: getNominatorsForValidatorQuery(fromEra, toEra, validator) },
         });
 
-        // nominators[address]=[active_eras]
         let nominatorsWithRewardsEraMap = getNominatorsRewardsWindow(response.data.data.eraValidatorInfos);
-
-        let count = 0;
-
         for (let key in nominatorsWithRewardsEraMap) {
             if (nominatorsWithRewardsEraMap.hasOwnProperty(key)) {
                 nominatorsWithRewardsEraMap[key] = groupContinuousNumbers(nominatorsWithRewardsEraMap[key]);
             }
-            count++;
         }
 
-        // [window_from,window_to]=>address[]
         const windowsEraToNominatorArray = groupByWindowSize(nominatorsWithRewardsEraMap);
-
-        // address=>{amount,timestamp}[]
-        const { parsedResult: nominatorRewardsMap, addresses } = await getRewardsForNominatorsArray(windowsEraToNominatorArray, currentEra);
+        let { parsedResult: nominatorRewardsMap, addresses } = await getRewardsForNominatorsArray(windowsEraToNominatorArray, currentEra);
 
         console.log("processed===", Object.keys(nominatorRewardsMap).length);
-
         const processedSet = new Set(Object.keys(nominatorRewardsMap));
 
-        // Find elements that are in 'preprocessed' but not in 'processed'
         const missingInProcessed = [...addresses].filter(item => !processedSet.has(item));
-        console.log("missingInProcessed:", missingInProcessed.length)
-        for (let u = 0; u < missingInProcessed.length; u++) {
-            console.log(missingInProcessed[u] + ":" + nominatorsWithRewardsEraMap[missingInProcessed[u]])
+        console.log("missingInProcessed:", missingInProcessed.length);
+
+        if (missingInProcessed.length > 0) {
+            console.log("Re-fetching missing nominators...");
+            let missingEraMap = {};
+            missingInProcessed.forEach(addr => {
+                if (nominatorsWithRewardsEraMap[addr]) {
+                    missingEraMap[addr] = nominatorsWithRewardsEraMap[addr];
+                }
+            });
+
+            const missingWindowsEraToNominatorArray = groupByWindowSize(missingEraMap);
+            console.log("missingWindowsEraToNominatorArray===",missingWindowsEraToNominatorArray);
+            let { parsedResult: missingRewardsMap } = await getRewardsForNominatorsArray(missingWindowsEraToNominatorArray, currentEra);
+
+            // Merge missing data into the main results
+            Object.entries(missingRewardsMap).forEach(([key, value]) => {
+                if (!nominatorRewardsMap[key]) {
+                    nominatorRewardsMap[key] = [];
+                }
+                nominatorRewardsMap[key] = nominatorRewardsMap[key].concat(value);
+            });
+
+            console.log("Re-fetch completed. Total processed:", Object.keys(nominatorRewardsMap).length);
         }
 
-
         const finalResult = transformMapToArray(nominatorRewardsMap);
+        return { nominators: finalResult,cumulated_stakes:getCumulatedStake(finalResult) };
 
-        return {
-            nominators: finalResult,
-            // cumulated_stakes:getCumulatedStake(finalResult)
-        };
     } catch (error) {
         console.log("error===", error);
         return [];
     }
 }
+
 
 function getNominatorsRewardsWindow(data) {
     let result = {};
