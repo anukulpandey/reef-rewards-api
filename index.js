@@ -8,8 +8,8 @@ const app = express();
 
 app.get("/sqwid",async(req,res)=>{
   try {
-    const { from, to,validator,showRewards } = req.query;
-    const nominators = await getNominatorsForValidatorsFromSqwid(from,to,validator,showRewards);
+    const { from, to,validator } = req.query;
+    const nominators = await getNominatorsForValidatorsFromSqwid(from,to,validator);
 
     res.json({
       validator,from,to,...nominators

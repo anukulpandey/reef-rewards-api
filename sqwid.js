@@ -22,12 +22,12 @@ function getTimestampFromDate(from){
     return from ? new Date(from.split('-').reverse().join('-')).getTime() : null
 }
 
-function transformMapToArray(inputObj, showRewards) {
+function transformMapToArray(inputObj) {
     return Object.entries(inputObj).map(([address, stakes]) => {
         let result = { address };
-        if (showRewards) {
-            result.amount_staked = formatStakings(stakes.map(({ amount, timestamp }) => ({ amount, timestamp })));
-        }
+        // if (showRewards) {
+        //     result.amount_staked = formatStakings(stakes.map(({ amount, timestamp }) => ({ amount, timestamp })));
+        // }
         return result;
     });
 }
@@ -47,10 +47,10 @@ function getNominatorsForValidatorQuery(from,to,validator){
   }
 
 
-function getRewardsQuery(from,to,nominators){
+function getRewardsQuery(from,to,nominators,offset){
     return `
       query GetRewards {
-        stakings(limit: 200, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_in: ${nominators}}}}}) {
+        stakings(limit: 200, offset: ${offset}, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_in: ${nominators}}}}}) {
           signer {
             id
           }
@@ -61,58 +61,67 @@ function getRewardsQuery(from,to,nominators){
   }
 
 
-  async function getRewardsForNominatorsArray(windowsEraToNominatorArray,currentEra) {
-      try {
-        const requests =Object.entries(windowsEraToNominatorArray).map(async ([key, value]) => {
-            const eraFrame =JSON.parse(key);
+  async function getRewardsForNominatorsArray(windowsEraToNominatorArray, currentEra) {
+    try {
+        const parsedResult = {};
+        const addresses = new Set();
+
+        for (const [key, value] of Object.entries(windowsEraToNominatorArray)) {
+            const eraFrame = JSON.parse(key);
             const nominators = JSON.stringify(value, null, 2);
 
-            const fromTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[0],currentEra));
-            const toTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[1],currentEra));
+            const fromTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[0], currentEra));
+            const toTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[1], currentEra));
 
-          try {
-            const response = await axios({
-              method: "post",
-              url: GQL_ENDPOINT,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              data: {
-                query: getRewardsQuery(fromTimestamp, toTimestamp, nominators),
-              },
-            });
-            
-            return response.data.data.stakings;
-          } catch (error) {
-            console.error(`Error fetching rewards:`, error);
-            return { };
-          }
-        });
-        
-        let parsedResult = {};
+            for(let x=0;x<value.length;x++){
+                addresses.add(value[x]);
+            }
 
-        const updatedNominators = await Promise.all(requests);
+            let offset = 0;
+            const maxOffset = value.length * (eraFrame[1] - eraFrame[0]);
+            while (offset < maxOffset) {
+                try {
+                    const response = await axios({
+                        method: "post",
+                        url: GQL_ENDPOINT,
+                        headers: { "Content-Type": "application/json" },
+                        data: {
+                            query: getRewardsQuery(fromTimestamp, toTimestamp, nominators, offset),
+                        },
+                    });
 
-        for(let i=0;i<updatedNominators.length;i++){
-            for(let j=0;j<updatedNominators[i].length;j++){
-                if (!parsedResult[updatedNominators[i][j]['signer']['id']]) {
-                    parsedResult[updatedNominators[i][j]['signer']['id']] = [];
+                    const rewards = response.data.data.stakings || [];
+
+                    for (const reward of rewards) {
+                        const signerId = reward.signer.id;
+                        if (!parsedResult[signerId]) {
+                            parsedResult[signerId] = [];
+                        }
+                        parsedResult[signerId].push({
+                            amount: reward.amount,
+                            timestamp: reward.timestamp,
+                        });
+                    }
+
+                    offset += 200;
+
+                } catch (error) {
+                    console.error(`Error fetching rewards at offset ${offset}:`, error);
                 }
-                parsedResult[updatedNominators[i][j]['signer']['id']].push({
-                    amount:updatedNominators[i][j]['amount'],
-                    timestamp:updatedNominators[i][j]['timestamp'],
-                })
-            } 
+            }
         }
 
-        return parsedResult;
-      } catch (error) {
+        console.log("preprocessed===",addresses.size);
+
+        return {parsedResult,addresses};
+    } catch (error) {
         console.error("getNominatorsRewards error:", error);
-      }
     }
+}
+
     
 
-async function getNominatorsForValidatorsFromSqwid(from,to,validator,showRewards) {
+async function getNominatorsForValidatorsFromSqwid(from,to,validator) {
      // converting dd-mm-yyyy to timestamps
         let fromTimestamp = getTimestampFromDate(from);
         let toTimestamp = getTimestampFromDate(to);
@@ -138,23 +147,38 @@ async function getNominatorsForValidatorsFromSqwid(from,to,validator,showRewards
         // nominators[address]=[active_eras]
         let nominatorsWithRewardsEraMap = getNominatorsRewardsWindow(response.data.data.eraValidatorInfos);
 
+        let count=0;
+
         for (let key in nominatorsWithRewardsEraMap) {
             if (nominatorsWithRewardsEraMap.hasOwnProperty(key)) { 
                 nominatorsWithRewardsEraMap[key]=groupContinuousNumbers(nominatorsWithRewardsEraMap[key]);
             }
+            count++;
         }
 
         // [window_from,window_to]=>address[]
         const windowsEraToNominatorArray=groupByWindowSize(nominatorsWithRewardsEraMap);
 
         // address=>{amount,timestamp}[]
-        const nominatorRewardsMap = await getRewardsForNominatorsArray(windowsEraToNominatorArray,currentEra);
+        const {parsedResult:nominatorRewardsMap,addresses} = await getRewardsForNominatorsArray(windowsEraToNominatorArray,currentEra);
 
-        const finalResult = transformMapToArray(nominatorRewardsMap,showRewards);
+        console.log("processed===",Object.keys(nominatorRewardsMap).length); 
+
+        const processedSet = new Set(Object.keys(nominatorRewardsMap));
+
+// Find elements that are in 'preprocessed' but not in 'processed'
+const missingInProcessed = [...addresses].filter(item => !processedSet.has(item));
+console.log("missingInProcessed:",missingInProcessed.length)
+for(let u=0;u<missingInProcessed.length;u++){
+    console.log(missingInProcessed[u]+":"+nominatorsWithRewardsEraMap[missingInProcessed[u]])
+}
+
+
+        const finalResult = transformMapToArray(nominatorRewardsMap);
 
         return {
             nominators:finalResult,
-            cumulated_stakes:getCumulatedStake(finalResult)
+            // cumulated_stakes:getCumulatedStake(finalResult)
         };
     } catch (error) {
         console.log("error===",error);
