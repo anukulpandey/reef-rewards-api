@@ -24,6 +24,21 @@ function getRewardsQuery(from,to,signer){
       }`;
   }
 
+function getUniqueTimestamps(arr) {
+    const timestampsSet = new Set();
+  
+    arr.forEach(item => {
+      if (parseInt(item.amount) > 0) {
+        timestampsSet.add(item.timestamp);
+      }
+    });
+  
+    return timestampsSet.size;
+  }
+
+  function cumulateNominatorRewards(arr) {
+    return arr.reduce((sum, item) => sum + parseInt(item.amount), 0);
+  }
 
 async function getNominatorsRewards(nominators, from, to) {
     try {
@@ -42,11 +57,13 @@ async function getNominatorsRewards(nominators, from, to) {
           
           return {
             ...nominator,
-            amount_staked: formatStakings(response.data.data.stakings),
+            rewarded_days:getUniqueTimestamps(formatStakings(response.data.data.stakings)),
+            cumulated_rewards:cumulateNominatorRewards(formatStakings(response.data.data.stakings)),
+            amount_staked: formatStakings(response.data.data.stakings)
           };
         } catch (error) {
           console.error(`Error fetching rewards for ${nominator.address}:`, error);
-          return { ...nominator, amount_staked: [] };
+          return { ...nominator, rewarded_days:0 ,amount_staked: []};
         }
       });
       
