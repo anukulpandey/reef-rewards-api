@@ -1,9 +1,23 @@
 
 const express = require("express");
 const { PORT } = require('./constants');
-const { getValidators, getNominators, getNominatorsForValidator } = require('./nominators');
+const { getValidators, getNominators, getNominatorsForValidator, getCurrentEra } = require('./nominators');
+const { getNominatorsForValidatorsFromSqwid } = require("./sqwid");
 
 const app = express();
+
+app.get("/sqwid",async(req,res)=>{
+  try {
+    const { from, to,validator } = req.query;
+    const nominators = await getNominatorsForValidatorsFromSqwid(from,to,validator);
+
+    res.json({
+      validator,from,to,...nominators
+    })
+  } catch (error) {
+    res.status(500).json({ error });
+  }
+});
 
 app.get("/validators", async (req, res) => {
   try {

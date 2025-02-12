@@ -21,6 +21,11 @@ async function getValidators() {
   
     return (Math.min(toEra,currentEra)-Math.max(fromEra,nominatorEra))*2
   }
+
+  async function getCurrentEra(){
+    const api = await getProvider();
+    return (await api.query.staking.activeEra()).unwrap().index.toNumber();
+  }
   
   
   async function getNominators() {
@@ -37,8 +42,7 @@ async function getValidators() {
     });
   
     let validatorsData = [];
-    const currentEra = (await api.query.staking.activeEra()).unwrap().index.toNumber();
-  
+    const currentEra = await getCurrentEra();
     for (let i = 0; i < validators.length; i++) {
       let validator = validators[i];
       let nominators = [];
@@ -70,8 +74,19 @@ async function getValidators() {
         stakeMap.set(timestamp, (stakeMap.get(timestamp) || 0) + Number(amount));
       }
     }
-    return Array.from(stakeMap, ([timestamp, amount]) => ({ amount,timestamp }));
+  
+    const stakeArray = Array.from(stakeMap, ([timestamp, amount]) => ({ amount, timestamp }));
+
+    const sortedStakeArray = stakeArray.sort((a, b) => {
+      const dateA = new Date(a.timestamp.split('-').reverse().join('-'));
+      const dateB = new Date(b.timestamp.split('-').reverse().join('-'));
+  
+      return dateA - dateB;
+    });
+  
+    return sortedStakeArray;
   }
+  
   
   function getActiveNominatorsInFrame(nominators){
     return nominators.filter(nominator => nominator.amount_staked.length > 0);
@@ -126,4 +141,4 @@ async function getNominatorsForValidator(validator,from,to) {
   }
 
   
-module.exports ={getValidators, getNominators,getNominatorsForValidator}
+module.exports ={getValidators, getNominators,getNominatorsForValidator,getCurrentEra,getTimestamp,getCumulatedStake}
