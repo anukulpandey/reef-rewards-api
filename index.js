@@ -56,7 +56,7 @@ function getDaysInRange(fromTimestamp, toTimestamp, nominatorEra, currentEra) {
   const fromEra = nominatorEra + Math.floor((fromTimestamp/1000 - currentEraStart) / eraDuration);
   const toEra = nominatorEra + Math.floor((toTimestamp/1000 - currentEraStart) / eraDuration);
 
-  return (Math.max(fromEra,nominatorEra)-Math.min(toEra,currentEra))*2
+  return (Math.min(toEra,currentEra)-Math.max(fromEra,nominatorEra))*2
 }
 
 
