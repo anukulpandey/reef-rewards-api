@@ -1,6 +1,6 @@
 const { default: axios } = require("axios");
 const { GQL_ENDPOINT } = require("./constants");
-const { getCurrentEra } = require("./nominators");
+const { getCurrentEra, getTimestamp } = require("./nominators");
 
 async function getEraDifferenceFromTimestamp(timestamp) {
     const currentTime = Date.now();
@@ -11,8 +11,21 @@ async function getEraDifferenceFromTimestamp(timestamp) {
     return eraIndex;
   }
 
+  async function getTimestampFromEra(eraIndex,currentEraIndex, referenceTimestamp = Date.now()) {
+    const eraDuration = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    const targetTimestamp = referenceTimestamp - (currentEraIndex - eraIndex) * eraDuration;
+    return new Date(targetTimestamp).toISOString();
+}
+
 function getTimestampFromDate(from){
     return from ? new Date(from.split('-').reverse().join('-')).getTime() : null
+}
+
+function transformMapToArray(inputObj) {
+    return Object.entries(inputObj).map(([address, stakes]) => ({
+        address,
+        amount_staked: stakes.map(({ amount, timestamp }) => ({ amount, timestamp }))
+    }));
 }
 
 function getNominatorsForValidatorQuery(from,to,validator){
@@ -28,6 +41,71 @@ function getNominatorsForValidatorQuery(from,to,validator){
         }`;
   }
 
+
+function getRewardsQuery(from,to,nominators){
+    return `
+      query GetRewards {
+        stakings(limit: 100, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_in: ${nominators}}}}}) {
+          signer {
+            id
+          }
+          amount
+          timestamp
+        }
+      }`;
+  }
+
+
+  async function getRewardsForNominatorsArray(windowsEraToNominatorArray,currentEra) {
+      try {
+        const requests =Object.entries(windowsEraToNominatorArray).map(async ([key, value]) => {
+            const eraFrame =JSON.parse(key);
+            const nominators = JSON.stringify(value, null, 2);
+
+            const fromTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[0],currentEra));
+            const toTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[1],currentEra));
+
+          try {
+            const response = await axios({
+              method: "post",
+              url: GQL_ENDPOINT,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              data: {
+                query: getRewardsQuery(fromTimestamp, toTimestamp, nominators),
+              },
+            });
+            
+            return response.data.data.stakings;
+          } catch (error) {
+            console.error(`Error fetching rewards:`, error);
+            return { };
+          }
+        });
+        
+        let parsedResult = {};
+
+        const updatedNominators = await Promise.all(requests);
+
+        for(let i=0;i<updatedNominators.length;i++){
+            for(let j=0;j<updatedNominators[i].length;j++){
+                if (!parsedResult[updatedNominators[i][j]['signer']['id']]) {
+                    parsedResult[updatedNominators[i][j]['signer']['id']] = [];
+                }
+                parsedResult[updatedNominators[i][j]['signer']['id']].push({
+                    amount:updatedNominators[i][j]['amount'],
+                    timestamp:updatedNominators[i][j]['timestamp'],
+                })
+            } 
+        }
+
+        return parsedResult;
+      } catch (error) {
+        console.error("getNominatorsRewards error:", error);
+      }
+    }
+    
 
 async function getNominatorsForValidatorsFromSqwid(from,to,validator) {
      // converting dd-mm-yyyy to timestamps
@@ -61,12 +139,15 @@ async function getNominatorsForValidatorsFromSqwid(from,to,validator) {
             }
         }
 
-        // now nominators[address]=[[window_1],[window_2]...]
-
-        // find nominators with same eras
+        // [window_from,window_to]=>address[]
         const windowsEraToNominatorArray=groupByWindowSize(nominatorsWithRewardsEraMap);
 
-        return windowsEraToNominatorArray;
+        // address=>{amount,timestamp}[]
+        const nominatorRewardsMap = await getRewardsForNominatorsArray(windowsEraToNominatorArray,currentEra);
+
+        const finalResult = transformMapToArray(nominatorRewardsMap);
+
+        return finalResult;
     } catch (error) {
         console.log("error===",error);
         return [];
