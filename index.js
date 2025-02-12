@@ -1,20 +1,11 @@
-const { WsProvider } = require('@polkadot/api');
-const { Provider } = require('@reef-chain/evm-provider');
+
 const axios = require('axios')
 const express = require("express");
+const { PORT } = require('./constants');
+const { getNominatorsRewards } = require('./gql');
+const { getProvider } = require('./provider');
 
 const app = express();
-const PORT = 3000;
-const RPC_URL = "wss://rpc.reefscan.com/ws";
-const GQL_ENDPOINT =  "https://squid.subsquid.io/reef-explorer/graphql";
-
-async function getProvider() {
-  const provider = new Provider({
-    provider: new WsProvider(RPC_URL)
-  });
-  await provider.api.isReadyOrError;
-  return provider.api;
-}
 
 async function getValidators() {
   const api = await getProvider();
@@ -23,28 +14,6 @@ async function getValidators() {
 
 function getTimestamp(timestamp) {
   return new Date(timestamp).toISOString(); 
-}
-
-function getRewardsQuery(from,to,signer){
-  return `
-    query GetRewards {
-      stakings(limit: 100, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_eq: "${signer}"}}}}) {
-        amount
-        timestamp
-        signer {
-          id
-        }
-      }
-    }`;
-}
-
-function formatStakings(stakings) {
-  return stakings.map(staking => ({
-    amount: (BigInt(staking.amount) / BigInt(1e18)).toString(),
-    timestamp: new Date(staking.timestamp)
-      .toLocaleDateString("en-GB")
-      .replace(/\//g, "-")
-  }));
 }
 
 function getDaysInRange(fromTimestamp, toTimestamp, nominatorEra, currentEra) {
@@ -59,40 +28,6 @@ function getDaysInRange(fromTimestamp, toTimestamp, nominatorEra, currentEra) {
   return (Math.min(toEra,currentEra)-Math.max(fromEra,nominatorEra))*2
 }
 
-
-
-
-async function getNominatorsRewards(nominators, from, to) {
-  try {
-    const requests = nominators.map(async (nominator) => {
-      try {
-        const response = await axios({
-          method: "post",
-          url: GQL_ENDPOINT,
-          headers: {
-            "Content-Type": "application/json",
-          },
-          data: {
-            query: getRewardsQuery(from, to, nominator.address),
-          },
-        });
-        
-        return {
-          ...nominator,
-          amount_staked: formatStakings(response.data.data.stakings),
-        };
-      } catch (error) {
-        console.error(`Error fetching rewards for ${nominator.address}:`, error);
-        return { ...nominator, amount_staked: [] };
-      }
-    });
-    
-    const updatedNominators = await Promise.all(requests);
-    return updatedNominators;
-  } catch (error) {
-    console.error("getNominatorsRewards error:", error);
-  }
-}
 
 async function getNominators() {
   const api = await getProvider();
