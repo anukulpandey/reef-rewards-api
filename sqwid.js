@@ -1,7 +1,7 @@
 const { default: axios } = require("axios");
 const { GQL_ENDPOINT } = require("./constants");
 const { getCurrentEra, getTimestamp, getCumulatedStake } = require("./nominators");
-const { formatStakings } = require("./gql");
+const { formatStakings, cumulateNominatorRewards } = require("./gql");
 
 async function getEraDifferenceFromTimestamp(timestamp) {
     const currentTime = Date.now();
@@ -47,7 +47,7 @@ function getNominatorsForValidatorQuery(from, to, validator) {
 function getRewardsQuery(from, to, nominators, offset) {
     return `
       query GetRewards {
-        stakings(limit: 200, offset: ${offset}, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_in: ${nominators}}}}}) {
+        stakings(limit: 200,orderBy: timestamp_DESC, offset: ${offset}, where: {timestamp_gte: "${from}", AND: {timestamp_lte: "${to}", AND: {signer: {id_in: ${nominators}}}}}) {
           signer {
             id
           }
@@ -66,9 +66,9 @@ async function getRewardsForNominatorsArray(windowsEraToNominatorArray, currentE
         for (const [key, value] of Object.entries(windowsEraToNominatorArray)) {
             const eraFrame = JSON.parse(key);
             const nominators = JSON.stringify(value, null, 2);
-
-            const fromTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[0], currentEra));
-            const toTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[1], currentEra));
+//era increased anukul forceful
+            const fromTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[0]-4, currentEra));
+            const toTimestamp = getTimestamp(await getTimestampFromEra(eraFrame[1]+4, currentEra));
 
             for (let x = 0; x < value.length; x++) {
                 addresses.add(value[x]);
@@ -135,6 +135,12 @@ async function getNominatorsForValidatorsFromSqwid(from, to, validator) {
         });
 
         let nominatorsWithRewardsEraMap = getNominatorsRewardsWindow(response.data.data.eraValidatorInfos);
+        let rewardedDays={};
+
+        for(let key in nominatorsWithRewardsEraMap){
+            rewardedDays[key]=nominatorsWithRewardsEraMap[key].length;
+        }
+
         for (let key in nominatorsWithRewardsEraMap) {
             if (nominatorsWithRewardsEraMap.hasOwnProperty(key)) {
                 nominatorsWithRewardsEraMap[key] = groupContinuousNumbers(nominatorsWithRewardsEraMap[key]);
@@ -163,7 +169,6 @@ async function getNominatorsForValidatorsFromSqwid(from, to, validator) {
             console.log("missingWindowsEraToNominatorArray===",missingWindowsEraToNominatorArray);
             let { parsedResult: missingRewardsMap } = await getRewardsForNominatorsArray(missingWindowsEraToNominatorArray, currentEra);
 
-            // Merge missing data into the main results
             Object.entries(missingRewardsMap).forEach(([key, value]) => {
                 if (!nominatorRewardsMap[key]) {
                     nominatorRewardsMap[key] = [];
@@ -175,7 +180,12 @@ async function getNominatorsForValidatorsFromSqwid(from, to, validator) {
         }
 
         const finalResult = transformMapToArray(nominatorRewardsMap);
-        return { nominators: finalResult,cumulated_stakes:getCumulatedStake(finalResult) };
+
+        for(let i=0;i<finalResult.length;i++){
+            finalResult[i]['rewarded_days']=rewardedDays[finalResult[i]['address']];
+            finalResult[i]['cumulated_rewards']=cumulateNominatorRewards(finalResult[i]['amount_staked']);
+        }
+        return { nominators: finalResult,cumulated_stakes:getCumulatedStake(finalResult),cumulated_sum:cumulateNominatorRewards(getCumulatedStake(finalResult)) };
 
     } catch (error) {
         console.log("error===", error);
