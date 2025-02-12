@@ -9,10 +9,10 @@ const app = express();
 app.get("/sqwid",async(req,res)=>{
   try {
     const { from, to,validator } = req.query;
-    const response = await getNominatorsForValidatorsFromSqwid(from,to,validator);
+    const nominators = await getNominatorsForValidatorsFromSqwid(from,to,validator);
 
     res.json({
-      from,to,validator,response
+      validator,from,to,nominators
     })
   } catch (error) {
     res.status(500).json({ error });
